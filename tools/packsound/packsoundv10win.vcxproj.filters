@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+	<ItemGroup>
+		<ClInclude Include="source\packsound.h">
+			<Filter>source</Filter>
+		</ClInclude>
+		<ClCompile Include="source\packsound.cpp">
+			<Filter>source</Filter>
+		</ClCompile>
+		<Filter Include="source">
+			<UniqueIdentifier>{6A6F04C1-7342-3D5C-A6A4-779EF27C7D1F}</UniqueIdentifier>
+		</Filter>
+	</ItemGroup>
+</Project>

@@ -1,0 +1,195 @@
+*
+* Space Ace IIgs Resource file
+*
+
+	LST	OFF
+	TR	ON
+
+rIcon				=	$8001	; Icon type	
+rPicture			=	$8002	; Picture type	
+rControlList		=	$8003	; Control list type	
+rControlTemplate	=	$8004	; Control template type	
+rC1InputString		=	$8005	; GS/OS class 1 input string	
+rPString			=	$8006	; Pascal string type	
+rStringList			=	$8007	; String list type	
+rMenuBar			=	$8008	; MenuBar type	
+rMenu				=	$8009	; Menu template	
+rMenuItem			=	$800A	; Menu item definition	
+rTextForLETextBox2	=	$800B	; Data for LineEdit LETextBox2 call
+rCtlDefProc			=	$800C	; Control definition procedure type	
+rCtlColorTbl		=	$800D	; Color table for control	
+rWindParam1			=	$800E	; Parameters for NewWindow2 call	
+rWindParam2			=	$800F	; Parameters for NewWindow2 call	
+rWindColor			=	$8010	; Window Manager color table	
+rTextBlock			=	$8011	; Text block	
+rStyleBlock			=	$8012	; TextEdit style information	
+rToolStartup		=	$8013	; Tool set startup record	
+rResName			=	$8014	; Resource name	
+rAlertString		=	$8015	; AlertWindow input data	
+rText				=	$8016	; Unformatted text	
+rCodeResource		=	$8017
+rCDEVCode			=	$8018
+rCDEVFlags			=	$8019
+rTwoRects			=	$801A	; Two rectangles
+rFileType			=	$801B	; Filetype descriptors--see File Type Note $42
+rListRef			=	$801C	; List member	
+rCString			=	$801D	; C string	
+rXCMD				=	$801E
+rXFCN				=	$801F
+rErrorString		=	$8020	; ErrorWindow input data	
+rKTransTable		=	$8021	; Keystroke translation table	
+rWString			=	$8022	; not useful--duplicates $8005	
+rC1OutputString		=	$8023	; GS/OS class 1 output string	
+rSoundSample		=	$8024
+rTERuler			=	$8025	; TextEdit ruler information	
+rFSequence			=	$8026
+rCursor				=	$8027	; Cursor resource type	
+rItemStruct			=	$8028	; for 6.0 Menu Manager	
+rVersion			=	$8029
+rComment			=	$802A
+rBundle				=	$802B
+rFinderPath			=	$802C
+rPaletteWindow		=	$802D	; used by HyperCard IIgs 1.1	
+rTaggedStrings		=	$802E
+rPatternList		=	$802F
+rRectList			=	$C001
+rPrintRecord		=	$C002
+rFont				=	$C003
+	
+verUS				=	$0000
+
+	ORG		$0000
+
+*
+* Resource file header
+*
+
+	ADRL	0			;Version (0 = Little Endian)
+	ADRL	FileToMap	;FileToMap
+	ADRL	FileToMapEnd-FileToMap		;FileMapSize
+	DS	128				;FileMemo
+
+FileToMap
+	DA		0			;Not used
+	ADRL	0			;Version (0 = Little Endian)
+	ADRL	FileToMap		;FileToMap
+	ADRL	FileToMapEnd-FileToMap	;FileMapSize
+	
+
+	DA	ResourceList-FileToMap		;MapToIndex
+	DA		0		;mapFileNum
+	DA		0		;mapID
+	ADRL	14		;MapIndexSize (Size per entry)
+	ADRL	4		;MapIndexUsed (Number of resources)
+	DA		10		;MapFreeListSize
+	DA		1		;MapFreeListUsed	;Number of used entries
+	
+*
+* Free data array
+*
+
+	ADRL	EndOfFile	;End of the file
+	ADRL	$FFFFFFFF-EndOfFile	;Amount of free space
+	DS	{10-1}*8	;Rest of the data (Not used)
+	
+	DS	$100-*		;Pad to next sector
+
+*
+* Array of resource entries
+*
+
+ResourceList
+	DA		rToolStartup	;resType
+	ADRL	1		;resID
+	ADRL	ToolStartup	;resOffset
+	DA		0		;resAttr
+	ADRL	ToolStartupEnd-ToolStartup		;resSize
+	ADRL	0		;resHandle
+	
+	DA		rResName	;resType
+	ADRL	$18013	;resID
+	ADRL	ResourceNames	;resOffset
+	DA		0		;resAttr
+	ADRL	ResourceNamesEnd-ResourceNames		;resSize
+	ADRL	0		;resHandle
+	
+	DA		rVersion	;resType
+	ADRL	1		;resID
+	ADRL	Version	;resOffset
+	DA		0		;resAttr
+	ADRL	VersionEnd-Version		;resSize
+	ADRL	0		;resHandle
+
+	DA		rComment	;resType
+	ADRL	1		;resID
+	ADRL	Comment	;resOffset
+	DA		0		;resAttr
+	ADRL	CommentEnd-Comment	;resSize
+	ADRL	0		;resHandle
+	
+	DS 202
+FileToMapEnd
+
+
+*
+* Tool startup
+*
+
+ToolStartup
+	DA	0		;Flags
+	DA	$C000	;Start quickdraw in 320 mode
+	DA	0		;Not used
+	ADRL	0	;Not used
+	DA	7		;Number of tools to start
+	DA	3
+	DA	$300
+	DA	4
+	DA	$301
+	DA	5
+	DA	$302
+	DA	6
+	DA	$300
+	DA	8
+	DA	$301
+	DA	11
+	DA	$200
+	DA	30
+	DA	$100
+ToolStartupEnd
+	
+Version
+	DB	0	;Release number
+	DB	$A0	;Development / Final
+	DB	$10	;Version 2.1
+	DB	2
+	
+	DA	verUS	;Region code
+	STR	'Space Ace'
+	STR '(C) 1989,1991, ReadySoft Inc.'
+VersionEnd
+
+Comment
+	ASC	'Space Ace was rewritten by Rebecca Ann Heineman so that '
+	ASC	'you can use extra GS/OS memory and allow full use '
+	ASC	'of a hard drive. Press 'D2'Q'D3' to quit from the game.'0D0D
+	
+	ASC	'Please purchase the real game from ReadySoft Inc. '
+	ASC	'30 Wertheim Court, Unit #2, Richmond Hill, Ontario, '
+	ASC	'Canada, L4B 1B9'0D0D
+	ASC	'Tel (416)-731-4175'
+CommentEnd
+	 
+ResourceNames
+	DA		1			;Name holder
+	ADRL	1			;Number of resources
+	ADRL	1			;Resource ID
+	STR		'MyTools'	;Name of the resource
+ResourceNamesEnd
+
+*
+* Label for the end of the file, for file size
+*
+
+EndOfFile
+	
+	SAV	../bin/SpaceAce#b3db03r

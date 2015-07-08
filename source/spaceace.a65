@@ -1,0 +1,2602 @@
+	LST	OFF
+	TR	ON
+	XC
+	XC
+	MX	%00
+	REL
+
+*
+* Predefined labels:
+*
+
+TLStartUp		=	$201
+TLShutDown		=	$301
+TLMountVolume	=	$1101
+StartUpTools	=	$1801
+ShutDownTools	=	$1901
+
+MMStartUp		=	$202
+MMShutDown		=	$302
+NewHandle		=	$902
+DisposeHandle	=	$1002
+DisposeAll		=	$1102
+
+SetHeartBeat	=	$1203
+DelHeartBeat	=	$1303
+GetNewID		=	$2003
+DeleteID		=	$2103
+
+SetColorTable	=	$0E04
+SetAllSCBs		=	$1404
+GetPort			=	$1C04
+HideCursor		=	$9004
+
+GetNextEvent	=	$A06
+
+Tool_Entry		=	$E10000
+GSOSSTACK		=	$E100B0
+
+MyToolTable		=	1
+
+MemHandles		=	128	;Maximum number of handles
+
+;	EXT	DigitPtr,MissionIsOver,Press0Start
+
+*
+* Main entry
+*
+
+	PHK	;Set my bank
+	PLB
+	TSC	;Save my stack pointer
+	STA	MyStack
+	TDC	;Save my direct page
+	STA	MyDirect
+
+	JSR	InitTools	;Init the game tools
+	BCS	QuitMe
+	JSR	CheckHardDrive	;Check if I am running off of a Hard drive
+	JSR	Game	;Play the game
+QuitNow	LDA	MyStack
+	TSC
+QuitMe	JSR	KillTools
+	PEA	#0	;No parms
+	TSC	;Get pointer to data
+	INC
+	PEA	#0	;Bank of stack
+	PHA	;Pointer
+	PEA	#$2029	;GSOS Quit
+	JSL	GSOSSTACK	;Exit!
+	BRK	$F0	;Error!
+
+*
+* Actual game
+*
+
+Game	PEA	#1	;Picture #1
+	JSR	LoadScripts
+	JSR	PlayTitlePage	;Show and play the title page
+	PEA	#2	;Picture #2
+	JSR	LoadScripts
+	PEA	#3	;Picture #3
+	JSR	LoadScripts
+	PEA	#4	;Picture #4
+	JSR	LoadScripts
+	PEA	#5	;Picture #5
+	JSR	LoadScripts
+	BRA	DemoLoop2
+
+DemoLoop	JSR	PlayTitlePage
+DemoLoop2	JSR	FadeOut
+	JSR	GetJoyStick
+	AND	#$0010
+	BNE	FadeStart2
+	JSR	ShowCredits
+	JSR	GetJoyStick
+	AND	#$0010
+	BNE	FadeStart
+	JSR	FadeOut
+	JSR	WaitForFade
+	LDA	#-1	;Do not show the current score
+	STA	ScoreDisable
+	PEA	#6
+	JSR	PlayAScene
+	STZ	ScoreDisable	;Allow score display
+	CMP	#-1
+	BEQ	StartGame
+	JSR	WaitForFade
+	BRA	DemoLoop
+
+*
+* Start a new game
+*
+
+StartGame	STZ	ScoreDisable	;Allow score display
+FadeStart	JSR	FadeOut	;Fade out the screen
+FadeStart2	JSR	WaitForFade	;Wait until the fade is complete
+	STZ	Score	;No score
+	LDA	#3	;3 Lives
+	STA	Lives
+	LDA	#6	;Start at scene #6
+	STA	CurrentScene	;Save
+
+*
+* Main game loop
+*
+
+]A	LDA	CurrentScene	;Get scene number
+	DEC
+	ASL	;Long word pointer
+	ASL
+	TAX
+	LDA	ScriptPtrs,X	;Is there a game script here?
+	BEQ	:WinGame	;I won?
+	LDA	CurrentScene
+	PHA
+	JSR	PlayAScene	;Play an animation scene
+	CMP	#-1
+	BEQ	YouDied3
+	INC	CurrentScene
+	BRA	]A
+
+:WinGame	LDA	#-1	;I won!!
+	STA	WinFlag
+	PEA	#5	;Victory screen
+	JSR	RunAllScenes
+	JSR	FadeIn	;Fade in colors
+	JSR	WaitForFade	;Wait until done
+]A	JSR	GetJoyStick	;Wait until the fire button is pressed
+	AND	#$0010
+	BEQ	]A
+	JSR	FadeOut	;Fade it out
+	JSR	WaitForFade	;Wait until done
+	JSR	ShowScoreScreen	;Show final score
+	JSR	WaitForFire	;Wait for fire button
+]B	JSR	FadeOut
+	JSR	WaitForFade
+	PEA	#5	;Force loading in disk #1
+	JSR	LoadScripts
+	BRL	DemoLoop
+
+YouDied3	JSR	ShowScoreScreen
+]A	JSR	GetJoyStick	;Wait for fire button
+	AND	#$10
+	BEQ	]A
+	BRA	]B
+
+*
+* Play a scene script
+*
+
+PlayAScene
+:RTSVal	= 1
+:CurrentScene = 3
+:EndDirect = 5
+
+	TSC
+	PHD
+	TCD
+	JSR	ShowScoreScreen
+	PEI	:CurrentScene
+	JSR	LoadScripts
+]A	JSR	WaitForFire
+	JSR	FadeOut
+	JSR	WaitForFade
+	PEI	:CurrentScene
+	JSR	RunAllScenes
+	PHA	;Save error
+	JSR	ShutOffSoundNow
+	STZ	SoundPresent
+	PLX	;Get error code
+	LDA	ScoreDisable	;Is the score screen allowed?
+	BNE	:Exit	;Nope?
+	CPX	#-1	;Error?
+	BNE	:Exit
+	DEC	Lives	;1 less life
+	BEQ	:Exit
+	JSR	ShowScoreScreen
+	BRA	]A
+
+:Exit	PHX	;Save answer
+	PEI	:CurrentScene
+	JSR	UnloadScripts
+	PLX
+	PLD	;Restore direct page
+	PLA	;Fix return address
+	STA	2-1,S
+	TXA
+	RTS
+
+*
+* Run all animation scenes in the script
+*
+
+RunAllScenes
+:RTSVal	= 1 
+:SceneNum = 3
+:EndDirect = 5
+
+	TSC
+	PHD
+	TCD
+
+	STZ	JoyStickVal	;Init joystick
+	LDA	:SceneNum
+	DEC	;-1 for 0-??
+	ASL
+	ASL
+	TAX
+	LDA	ScriptPtrs+2,X	;Get animation script pointer
+	TAX
+]A	PHX
+	LDA:	$0002,X	;Get pointer to game moves
+	PHA
+	LDA:	$0000,X	;Get number of script to play
+	PHA
+	JSR	RunAScene
+	PLX	;Restore index
+	CMP	#-1
+	BEQ	:HesDeadJim
+	INX	;Next script pointer
+	INX
+	INX
+	INX
+	LDA:	$0000,X	;Any more?
+	BEQ	:HesDeadJim	;He lives!
+	PHX
+	JSR	ShutOffSoundNow	;No more sound!
+	JSR	FadeOut	;Fade it out
+	JSR	WaitForFade	;Wait
+	PLX	;Next script
+	BRA	]A
+
+:HesDeadJim	PHA
+	JSR	FadeOut	;Fade it out
+	PLX
+	PLD
+	PLA
+	STA	2-1,S
+	TXA
+	RTS
+
+*
+* Run a single scene
+*
+
+RunAScene
+:Pointer = 1
+:RTSVal	= 5
+:FileNum = 7
+:MovesPointer = 9
+:EndDirect = 11
+
+	TSC
+	SEC
+	SBC	#4
+	TCS
+	PHD
+	TCD
+
+	STZ	PlayedDeath
+:PlayAgain	PEI	:FileNum	;Save scene number
+	JSR	FindFileInCache	;Find it in the cache
+	ASL
+	ASL
+	TAX
+	LDA	CacheHandle,X	;Save pointer
+	STA	:Pointer
+	LDA	CacheHandle+2,X
+	STA	:Pointer+2
+	LDY	#2
+	LDA	[:Pointer]
+	STA	UnpackPtr
+	LDA	[:Pointer],Y
+	STA	UnpackPtr+2
+
+	LDA	:FileNum	;Restore it
+	ORA	#$400	;Make into a sound file
+	PHA
+	JSR	FindFileInCache	;Present?
+	LDY	#-1
+	STY	SoundPresent
+	CMP	#-1
+	BEQ	:NoSound
+
+	STZ	SoundPresent	;Sound is present
+	ASL
+	ASL
+	TAX
+	LDA	CacheHandle,X	;Get pointer
+	STA	:Pointer
+	LDA	CacheHandle+2,X
+	STA	:Pointer+2
+	LDY	#8
+	LDA	[:Pointer],Y	;Size of memory
+	STA	RawSoundSize
+
+	LDY	#2
+	LDA	[:Pointer]
+	TAX
+	CLC
+	ADC	#4
+	STA	RawPackSoundPtr
+	LDA	[:Pointer],Y
+	STX	:Pointer
+	STA	:Pointer+2
+	ADC	#0
+	STA	RawPackSoundPtr+2
+
+	LDA	[:Pointer]	;Get pitch
+	STA	SoundPitch
+	LDY	#2
+	LDA	[:Pointer],Y	;Get length of file in pages
+	STA	SoundTime
+
+:NoSound	STZ	DocRamPtr	;Init DOC pointer
+	STZ	FrameCounter
+
+	PEA	#0	;Force screen to 320 mode
+	LDX	#SetAllSCBs
+	JSL	Tool_Entry
+	JSR	ResetSound	;Reset sound hardware
+	JSR	UnpackSomeSound	;Unpack sound data
+	JSR	WaitForFade	;Wait for screen fade
+	JSR	ProcessFrame	;Draw initial screen
+
+*
+* Move loop
+*
+
+]B	JSR	VideoSoundLoad	;Update sound data
+	INC	FrameCounter	;+1 to frame #
+	LDX	ScoreDisable	;Score screen allowed?
+	BEQ	:CheckAMove	;Yep, game in progress
+	JSR	GetJoyStick	;Joystick pressed?
+	BEQ	:NextFrame
+	LDX	#-1	;Exit
+	BRL	:Exit
+
+:CheckAMove	LDX	:MovesPointer	;Pointer to moves
+]A	LDA:	$0000,X	;Get time offset
+	AND	#$FF	;No move moves?
+	BEQ	:NextFrame	;Skip
+	BIT	#$80	;Wait for time
+	BEQ	:TimeYet
+	PHX
+	JSR	GetJoyStick
+	PLX
+	AND:	$0001,X	;Get joystick value
+	BNE	:BadMove
+	BRA	:Skip1
+
+:TimeYet	CMP	FrameCounter
+	BEQ	:CheckMove
+:Skip1	INX	;Next index
+	INX
+	INX
+	INX
+	BRA	]A
+
+:CheckMove	PHX
+	JSR	GetJoyStick
+	PLX
+	EOR:	$0001,X	;Move to check
+	AND	#$FF	;Match?
+	BEQ	:GoodMove	;Ok!
+	BIT	WimpMode	;I feel so wimpy!
+	BMI	:GoodMove	;
+
+:BadMove	STZ	JoyStickVal
+	PHX
+	JSR	ShutOffSoundNow
+	PLX
+	LDA:	$0002,X	;Get scene to jump to
+	XBA
+	STA	:FileNum	;Save file number
+	LDX	#NullMoves
+	STX	:MovesPointer
+	DEC	PlayedDeath	;I am playing the death scene
+	BRL	:PlayAgain
+
+:GoodMove	STZ	JoyStickVal	;Reset joystick
+	REP	#$31
+* CLC
+	LDA	Score	;100 points per move
+	ADC	#100
+	STA	Score
+:NextFrame	JSR	ProcessFrame	;Play a frame
+	CMP	#-1
+	BEQ	:EndNow
+	LDA	SideNeeded
+	BEQ	:JB
+	DEC	SideNeeded
+	BEQ	:EndNow
+:JB	BRL	]B
+
+:EndNow	JSR	VideoSoundLoad
+	LDX	#0
+	LDA	PlayedDeath
+	BEQ	:Exit
+	DEX
+:Exit	PLD
+	LDA	:RTSVal,S
+	STA	:EndDirect-2,S
+	CLC
+	TSC
+	ADC	#4+4
+	TCS
+	TXA
+	RTS
+
+*
+* Show the title page
+*
+
+PlayTitlePage	PEA	#1
+	JSR	RunAllScenes
+	JSR	FadeIn
+	JSR	WaitForFade
+	JSR	StartSoundNow
+	LDA	#170
+	STA	CountDown
+
+]A	JSR	GetJoyStick
+	AND	#$10
+	BNE	:Exit
+	JSR	LoadSomeDOCRam
+	LDA	CountDown
+	BNE	]A
+
+:Exit	JSR	ShutOffSoundNow
+	STZ	SoundPresent
+	RTS
+
+*
+* Who did what?
+*
+
+ShowCredits	PEA	#3
+	JSR	RunAllScenes
+	JSR	FadeIn
+	JSR	WaitForFade
+	LDA	#200
+	STA	CountDown
+]A	JSR	GetJoyStick
+	AND	#$10
+	BNE	:Exit
+	LDA	CountDown
+	BNE	]A
+:Exit	RTS
+
+*
+* Show score
+*
+
+ShowScoreScreen	LDA	ScoreDisable
+	BNE	:Exit
+	PEA	#2
+	JSR	RunAllScenes
+	JSR	CalcHighLow
+	PEA	#$8408	;Screen address
+	PEA	#4*2	;5 digits long
+	LDA	Score	;Show score
+	PHA
+	JSR	PrDec
+	PEA	#$8480	;Screen address
+	PEA	#0	;Only 1 digit
+	LDA	Lives	;Print the number of lives
+	PHA
+	JSR	PrDec
+
+	LDA	WinFlag	;Did you win?
+	BNE	:OverNow
+	LDA	Lives	;No more lives?
+	BNE	:Cont4
+:OverNow	PEA	#$93C8	;Place on screen
+	PEA	#MissionIsOver
+	JSR	DrawAShape
+:Cont4	JSR	FadeIn	;Fade in the screen
+	JSR	WaitForFade	;Wait until done
+	LDA	#100
+	STA	CountDown
+:Exit	RTS
+
+*
+* Wait until the fire button is pressed
+*
+
+WaitForFire	JSR	GetJoyStick	;Get joystick value
+	AND	#$0010
+	BNE	:Fire
+	LDA	CountDown	;Wait for IRQ time
+	BNE	WaitForFire
+:Fire	RTS
+
+*
+* Unpack a picture file crossing banks
+*
+
+UnpackPicSlow
+:RTSVal	= 1
+:DestPtr = 3
+:UnpackPtr = 7
+:EndDirect = 11
+
+	TSC
+	PHB
+	PHD
+	TCD
+
+	SEP	#$20
+	PEI	:DestPtr+1
+	PLB
+	PLB
+	LDX	:DestPtr
+	LDY	#0
+
+]A	LDA	[:UnpackPtr],Y
+	BEQ	:Exit
+	BMI	:RunLength
+	INY
+	STA	:DestPtr+2
+]B	LDA	[:UnpackPtr],Y
+	STA:	$0000,X
+	INY
+	INX
+	DEC	:DestPtr+2
+	BNE	]B
+	BRA	]A
+
+:RunLength	AND	#$7F
+	STA	:DestPtr+2
+	INY
+	LDA	[:UnpackPtr],Y
+	INY
+]B	STA:	$0000,X
+	INX
+	DEC	:DestPtr+2
+	BNE	]B
+	BRA	]A
+
+:Exit	REP	#$30
+	PLD
+	PLB
+	PLA
+	STA	8-1,S
+	CLC
+	TSC
+	ADC	#8-2
+	TCS
+	RTS
+
+*
+* Unpack an animation frame with bank crossing
+*
+
+UnpackAnimSlow
+:RTSVal = 1
+:DestPtr = 3
+:UnpackPtr = 7
+:EndDirect = 11
+
+	TSC
+	PHB
+	PHD
+	TCD
+
+	SEP	#$20
+	PEI	:DestPtr+1
+	PLB
+	PLB
+	LDX	:DestPtr
+	LDY	#0
+]A	LDA	[:UnpackPtr],Y
+	BNE	:NotPack
+	INY
+	LDA	[:UnpackPtr],Y
+	STA	:DestPtr+2
+	INY
+	LDA	[:UnpackPtr],Y
+	INY
+]B	STA:	$0000,X
+	INX
+	DEC	:DestPtr+2
+	BNE	]B
+	BRA	:Next
+
+:NotPack	BMI	:NotTab
+	REP	#$21
+	AND	#$FF
+	STA	:DestPtr+2
+	TXA
+	ADC	:DestPtr+2
+	TAX
+	SEP	#$20
+	INY
+	BRA	:Next
+
+:NotTab	AND	#$7F
+	STA	:DestPtr+2
+	INY
+]B	LDA	[:UnpackPtr],Y
+	STA:	$0000,X
+	INY
+	INX
+	DEC	:DestPtr+2
+	BNE	]B
+:Next	CPX	#$9D00
+	BLT	]A
+	REP	#$30
+	PLD
+	PLB
+	PLA
+	STA	8-1,S
+	CLC
+	TSC
+	ADC	#8-2
+	TCS
+	RTS
+
+*
+* Play a single animation frame
+*
+
+ProcessFrame
+:Palette	=	1
+:Pointer	=	33
+:RTSVal		=	37
+:EndDirect	=	39
+
+	TSC
+	SEC
+	SBC	#36
+	TCS
+	PHD
+	TCD
+
+	JSR	GetJoyStick	;Process the joystick
+	LDA	QuitFlag
+	BEQ	:cc
+	BRL	QuitNow
+
+:cc	LDA	PauseFlag	;Is the game paused?
+	BEQ	:NoPause
+	SEP	#$20
+	LDAL	$E100CA	;Ensoniq
+	STAL	$E1C03C
+	LDA	#$A0	;My Voice
+	STAL	$E1C03E
+	LDA	#$01	;Halt it!
+	STAL	$E1C03D
+	REP	#$20
+]A	JSR	GetJoyStick	;Process the joystick
+	LDA	PauseFlag	;Wait for pause to finish
+	BNE	]A
+	SEP	#$20
+	LDA	#$A0
+	STAL	$E1C03E	;sound	address	ptr	(lo)
+	LDA	MySoundHalt
+	STAL	$E1C03D	;sound	data	register
+	REP	#$20
+
+*
+* Now, process the current frame
+*
+
+:NoPause	LDA	UnpackPtr
+	STA	:Pointer
+	LDA	UnpackPtr+2
+	STA	:Pointer+2
+	LDA	[:Pointer]	;Get length of record
+	CMP	#$FF00
+	BLT	:Fine1
+	LDX	#-1
+	BRL	:Exit
+:Fine1	CLC
+	ADC	:Pointer
+	STA	UnpackPtr	;Save new low word
+	BCC	:NoCross
+	INC	UnpackPtr+2	;Next bank
+:NoCross	CLC	;+2 to index past length word
+	LDA	#2
+	ADC	:Pointer
+	STA	:Pointer
+	BCC	:CU
+	INC	:Pointer
+
+*
+* Play an animation frame
+*
+
+:CU	LDA	[:Pointer]	;Check if a palette needs to be loaded
+	BIT	#$80
+	BEQ	:NoNewPalette	;No new palette needed!
+	PHA	;Save opcode
+
+	LDY	#32-1
+]A	LDA	[:Pointer],Y	;Save my new palette
+	STA	NewPalette-1,Y
+	DEY
+	DEY
+	BPL	]A
+
+	LDA	1,S	;Get header
+	BIT	#$40	;New picture?
+	BEQ	:NoBlank
+	LDA	FadeFactor	;Fade in progress?
+	BEQ	:NoBlank
+
+	LDX	#32-2
+]A	STZ	:Palette,X	;Blank out the palette!
+	DEX
+	DEX
+	BPL	]A
+	LDA	#0
+	PHA
+	PHA
+	TDC
+	INC
+	PHA
+	LDX	#SetColorTable	;Set color palette
+	JSL	Tool_Entry
+
+:NoBlank	LDA	#-1	;Set flag
+	STA	BlankPalFlag
+	CLC
+	LDA	:Pointer
+	ADC	#32	;Index past palette
+	STA	:Pointer
+	BCC	:YC
+	INC	:Pointer+2
+:YC	PLA	;Restore opcode
+
+*
+* Now draw initial screen
+*
+
+:NoNewPalette	INC	:Pointer
+	BNE	:CS
+	INC	:Pointer+2
+:CS	PEI	:Pointer+2	;Save pointer to data
+	PEI	:Pointer
+	LDX	VideoBank
+	PHX
+	PEA	#$2000
+
+	BIT	#$0040	;Picture or animation?
+	BEQ	:Anim
+	JSR	UnpackPicSlow	;Unpack picture
+	BRA	:DrawZero
+
+:Anim	JSR	UnpackAnimSlow
+
+:Cont6	LDA	BlankPalFlag	;Blank picture?
+	BEQ	:DrawZero
+	LDA	SideNeeded	;Disk side required?
+	BNE	:DrawZero
+	LDA	FadeFactor	;Fade active?
+	BEQ	:DoFade
+	STZ	BlankPalFlag	;Palette is new
+	STA	ColorFlag	;Save color
+	BRA	:BeginSound
+:DoFade	JSR	FadeIn	;Fade in new picture
+	JSR	WaitForFade	;Wait until done
+
+:BeginSound	JSR	StartSoundNow	;Begin sound
+
+:DrawZero	LDA	ScoreDisable	;Is the score disabled?
+	BEQ	:Exit2
+	JSR	CalcHighLow	;Get colors
+	PEA	#$2030
+	PEA	#Press0Start	;Press "0" to start
+	JSR	DrawAShape
+:Exit2	LDX	#0
+:Exit	PLD	;Exit ok!
+	CLC
+	TSC
+	ADC	#36
+	TCS
+	TXA
+	RTS
+
+*
+* Heartbeat IRQ
+*
+
+MyIRQ	DS	4	;Handle to next heartbeat
+HeartTime	DA	1	;Time to next heartbeat
+	DA	$A55A	;Signature
+
+HeartBeatCode
+:Palette	=	1	;Temp color palette
+:EventRec	=	33	;Event record
+:PFlag		=	49
+:RTLVal		=	50	;Return address
+:EndDirect	=	53
+		
+
+	PHP
+	REP	#$30
+	TSC
+	SEC
+	SBC	#48	;Get my local storage
+	TCS
+	PHB	;Save bank
+	PHD
+	PHK
+	PLB
+	TCD
+	LDA	#1	;Reset timer
+	STA	HeartTime
+	CLC
+	LDA	SoundTimeDelta
+	ADC	SoundTime
+	AND	#$7FFF
+	STA	SoundTimeDelta
+
+	LDA	DiskTime
+	BEQ	:DiskMe
+	DEC	DiskTime
+:DiskMe
+
+	LDA	CountDown
+	BEQ	:DoneCount
+	DEC	CountDown
+
+:DoneCount	LDA	StartTimer	;Do I start the video timer?
+	BEQ	:Ecch1	;Nope
+	STZ	StartTimer	;Clear
+	STA	VideoCount	;Start it!
+:Ecch1	LDA	VideoCount	;Counted down?
+	BEQ	:CheckKey
+	DEC	VideoCount	;Count
+
+*
+* Check the keyboard
+*
+
+:CheckKey	STZ	KeyTime	;Allow an event to be processed
+
+*
+* Do I set a new palette
+*
+
+	LDA	ColorFlag
+	BEQ	:NoColorChange
+	STZ	ColorFlag
+	PEA	#0
+	PEA	#^NewPalette
+	PEA	#NewPalette
+	LDX	#SetColorTable	;Set color palette
+	JSL	Tool_Entry
+
+*
+* Do I fade the screen?
+*
+
+:NoColorChange	LDA	FadeFlag
+	BEQ	:ExitIRQ
+	CLC
+	LDA	FadeFactor
+	ADC	FadeFlag
+	STA	FadeFactor
+	BEQ	:Zilch
+	CMP	#16
+	BNE	:UseFade
+:Zilch	STZ	FadeFlag	;End fade
+
+:UseFade	SEP	#$30
+	LDY	#0
+	LDA	#0
+]A	PHA
+	LSR
+	LSR
+	LSR
+	LSR
+	STA	FadeTable,Y
+	PLA
+	CLC
+	ADC	FadeFactor
+	INY
+	CPY	#16
+	BNE	]A
+
+	LDX	#32-2
+]A	LDA	NewPalette,X
+	LSR
+	LSR
+	LSR
+	LSR
+	TAY
+	LDA	FadeTable,Y
+	ASL
+	ASL
+	ASL
+	ASL
+	STA	:Palette,X
+	LDA	NewPalette,X
+	AND	#$0F
+	TAY
+	LDA	:Palette,X
+	ORA	FadeTable,Y
+	STA	:Palette,X
+
+	LDY	NewPalette+1,X
+	LDA	FadeTable,Y
+	STA	:Palette+1,X
+	DEX
+	DEX
+	BPL	]A
+	REP	#$30
+	LDA	#0
+	PHA
+	PHA
+	TDC
+	INC
+	PHA
+	LDX	#SetColorTable
+	JSL	Tool_Entry
+:ExitIRQ	PLD
+	PLB
+	CLC
+	TSC
+	ADC	#48	;Remove palette
+	TCS
+	PLP
+	CLC
+	RTL	;Exit
+
+*
+* Fade the screen in
+*
+
+FadeIn	LDA	FadeFactor
+	BNE	:InProgress
+	STZ	BlankPalFlag	;Palette is no longer blank
+	LDA	#1
+	STA	FadeFlag
+:InProgress	RTS
+
+*
+* Fade the screen away
+*
+
+FadeOut	LDA	FadeFactor
+	BEQ	:InProgress
+	STZ	BlankPalFlag	;Palette is no longer blank
+	LDA	#-1
+	STA	FadeFlag
+:InProgress	RTS
+
+*
+* Wait for a screen fade to complete
+*
+
+WaitForFade
+]A	LDA	FadeFlag	;Fade in progress?
+	BNE	]A
+	RTS
+
+*
+* Unpack a small amount of sound data
+*
+
+UnpackSomeSound
+:Pointer	=	1
+:Length		=	5
+:RTSVal		=	7
+:EndDirect	=	9
+
+	TSC
+	SEC
+	SBC	#6
+	TCS
+	PHD
+	TCD
+	LDA	SoundPresent	;Sound loaded?
+	BNE	:Exit	;Nope, exit
+	LDA	SoundSize	;Any sound data left?
+	BEQ	:Exit
+	CMP	#$800
+	BLT	:UseThis
+	LDA	#$800
+:UseThis	STA	:Length
+	SEC
+	LDA	SoundSize
+	SBC	:Length
+	STA	SoundSize
+
+	SEP	#$20
+	LDAL	$E100CA
+	ORA	#$60
+	STAL	$E1C03C
+	REP	#$20
+	LDA	DocRamPtr
+	STAL	$E1C03E
+	CLC
+	ADC	:Length
+	ADC	:Length
+	STA	DocRamPtr
+	CLC
+	LDA	PackSoundPtr
+	STA	:Pointer
+	ADC	:Length
+	STA	PackSoundPtr
+	LDA	PackSoundPtr+2
+	STA	:Pointer+2
+	ADC	#0
+	STA	PackSoundPtr+2
+
+	LDY	#0
+	LDX	:Length
+]B	SEP	#$20
+]A	LDA	[:Pointer],Y
+	AND	#$F0
+	BNE	:NoZero1
+	INC	;Fix for Apple IIgs
+:NoZero1	STAL	$E1C03D	;sound	data	register
+
+	LDA	[:Pointer],Y
+	ASL
+	ASL
+	ASL
+	ASL
+	BNE	:NoZero2
+	INC
+:NoZero2	STAL	$E1C03D	;sound	data	register
+	INY
+	DEX
+	BNE	]A
+	REP	#$20
+:Exit	PLD	;Reset direct page
+	CLC
+	TSC
+	ADC	#6
+	TCS
+	RTS	;Exit
+
+*
+* Load some DOC ram from time to time
+*
+
+VideoSoundLoad
+	SEP	#$20
+	LDAL	$E100CA
+	ORA	#$60
+	STAL	$E1C03C	;Set video pointer
+	REP	#$20
+	LDA	DocRamPtr
+	STAL	$E1C03E	;sound	address	ptr	(hi
+]A	LDA	VideoCount	;Is the video playing?
+	BEQ	:VideoOver
+	JSR	LoadSomeDOCRam	;Play some sound
+	BRA	]A	;Loop
+
+:VideoOver	LDA	#8	;Wait 8 ticks
+	STA	StartTimer
+]A	LDA	StartTimer	;Time up?
+	BEQ	:Exit
+	JSR	LoadSomeDOCRam
+	BRA	]A
+:Exit	RTS
+
+*
+* Load some DOC ram
+*
+
+LoadSomeDOCRam
+:Pointer	=	1
+:Length		=	5
+:RTSVal		=	7
+:EndDirect	=	9
+
+	TSC
+	SEC
+	SBC	#6
+	TCS
+	PHD
+	TCD
+
+	LDA	SoundPresent	;Sound available?
+	BNE	:JExit
+	LDA	SoundSize	;Any data left?
+	BEQ	:JExit
+	LDA	SoundTimeDelta	;Time up?
+	AND	#$FF00
+	SEC
+	SBC	DocRamPtr	;Get differance
+	BGE	:Pos
+	EOR	#$8000	;Negate
+:Pos	CMP	#$1000	;Ram needed?
+	BGE	:Add
+:JExit	BRA	:Exit
+
+:Add	LDA	SoundSize	;Any data left?
+	CMP	#$100
+	BLT	:UseThis
+	LDA	#$100
+:UseThis	STA	:Length
+	SEC
+	LDA	SoundSize
+	SBC	:Length
+	STA	SoundSize
+
+	SEP	#$20
+	LDAL	$E100CA
+	ORA	#$60
+	STAL	$E1C03C	;sound	control	register
+	REP	#$20
+	LDA	DocRamPtr
+	STAL	$E1C03E	;sound	address	ptr	(lo)
+	CLC
+	ADC	:Length
+	ADC	:Length
+	AND	#$7FFF	;Keep in bounds
+	STA	DocRamPtr
+	CLC
+	LDA	PackSoundPtr	;Get pointer to data
+	ADC	:Length
+	STA	:Pointer
+	STA	PackSoundPtr
+	LDA	PackSoundPtr+2
+	ADC	#0
+	STA	:Pointer+2
+	STA	PackSoundPtr+2
+
+	SEP	#$20	;8 bit mode
+	LDX	:Length	;1 page of data
+	LDY	#0
+]A	LDA	[:Pointer],Y	;Get sound byte
+	AND	#$F0	;Mask
+	BNE	:NoZero1
+	INC	;No zeros!
+:NoZero1	STAL	$E1C03D	;Save in DOC ram
+	LDA	[:Pointer],Y
+	ASL	;Shift upper nibble
+	ASL
+	ASL
+	ASL
+	BNE	:NoZero2
+	INC	;No zeros!
+:NoZero2	STAL	$E1C03D	;Save in DOC ram
+	INY
+	DEX
+	BNE	]A
+	REP	#$20	;16 bit
+:Exit	PLD	;Reset direct page
+	CLC
+	TSC
+	ADC	#6
+	TCS
+	RTS	;Exit
+
+*
+* Reset sound hardware
+*
+
+ResetSound	LDA	SoundPresent
+	BNE	:Exit
+	SEP	#$20
+	LDAL	$E100CA	;Access DOC
+	STAL	$E1C03C
+	LDA	#$C0	;Waveform size
+	STAL	$E1C03E
+	LDA	#$3F
+	STAL	$E1C03D
+	LDA	#$00	;Pitch
+	STAL	$E1C03E
+	LDA	SoundPitch
+	STAL	$E1C03D
+	LDA	#$20	;High byte
+	STAL	$E1C03E
+	LDA	SoundPitch+1
+	STAL	$E1C03D
+	LDA	#$40	;Volume
+	STAL	$E1C03E
+	LDA	#$FF
+	STAL	$E1C03D
+	LDA	#$80	;Pointer
+	STAL	$E1C03E
+	LDA	DocRamPtr+1
+	STAL	$E1C03D
+	REP	#$20
+	LDA	RawSoundSize	;Reset sound pointers
+	STA	SoundSize
+	LDA	RawPackSoundPtr
+	STA	PackSoundPtr
+	LDA	RawPackSoundPtr+2
+	STA	PackSoundPtr+2
+:Exit	RTS
+
+*
+* Clear the halt bit to a loaded sound
+*
+
+StartSoundNow	LDA	SoundFlag	;Get the halt bit flag for sound enable
+	STA	MySoundHalt
+	LDA	SoundPresent	;Sound loaded?
+	BNE	:Nope
+	STZ	SoundTimeDelta	;Reset time delta
+	SEP	#$20
+	LDAL	$E100CA
+	STAL	$E1C03C
+	LDA	#$A0	;Halt register
+	STAL	$E1C03E
+	LDA	MySoundHalt	;Set/Clear halt bit
+	STAL	$E1C03D
+	REP	#$20	;16 bit
+:Nope	RTS	;Exit
+
+*
+* Turn off the sound hardware
+*
+
+ShutOffSoundNow	LDA	SoundPresent
+	BNE	:Exit
+	LDA	MySoundHalt
+	BNE	:Exit
+	LDA	#$01	;Enable sound
+	STA	MySoundHalt
+	SEP	#$20
+	LDAL	$E100CA
+	STAL	$E1C03C	;Access DOC registers
+	LDA	#$40
+	STAL	$E1C03E	;Base address
+	LDA	#0
+	STAL	$E1C03D
+	LDA	#$A0	;Halt bit
+	STAL	$E1C03E
+	LDA	#$02	;Reset it
+	STAL	$E1C03D
+	LDA	#$00	;Sound speed
+	STAL	$E1C03E
+	LDA	#$FF	;Maximum
+	STAL	$E1C03D
+	LDA	#$20
+	STAL	$E1C03E
+	LDA	#$FF
+	STAL	$E1C03D
+	LDA	#$A0	;Halt bit
+	STAL	$E1C03E	;
+]A	LDAL	$E1C03D	;Get halt bit
+	LSR
+	BCC	]A
+	REP	#$20
+	LDY	#8192	;Wait a little extra anyways
+]A	DEY
+	BNE	]A
+:Exit	RTS	;Exit
+
+*
+* Flush the cache
+*
+
+UnloadScripts
+:Handle		=	1
+:RTSVal		=	5	;Return address
+:ScriptNum	=	7	;Script number
+:EndDirect	=	9
+
+	TSC
+	SEC
+	SBC	#4
+	TCS
+	PHD
+	TCD
+
+	LDA	:ScriptNum	;Get script number
+	CMP	#6	;Permanent?
+	BLT	:Exit
+	DEC	;-1 for 0-99
+	ASL	;Long word pointer
+	ASL
+	TAY
+	LDX	ScriptPtrs,Y	;Get pointer to file list
+	BRA	:Loop	;Jump into loop
+
+]A	PHX
+	PHA	;File number
+	JSR	FindFileInCache	;Is the file in the cache?
+	CMP	#-1
+	BEQ	:NotHere	;Nope!
+	ASL
+	ASL
+	TAX
+	LDA	CacheHandle,X	;Get handle
+	STA	:Handle
+	LDA	CacheHandle+2,X
+	STA	:Handle+2
+	LDY	#4
+	LDA	[:Handle],Y	;Unlock the handle
+	AND	#$7FFF
+	STA	[:Handle],Y
+:NotHere	PLX	;Restore index
+	INX	;Next entry
+	INX
+:Loop	LDA:	$0000,X	;End of list?
+	BNE	]A	;Load it in
+:Exit	PLD	;Restore direct page
+	LDA	:RTSVal,S
+	STA	:EndDirect-2,S
+	CLC
+	TSC
+	ADC	#2+4
+	TCS
+	RTS	;Exit
+
+*
+* Load a file sequence from a script
+*
+
+LoadScripts
+:RTSVal		=	1	;Return address
+:ScriptNum	=	3	;Script number
+:EndDirect	=	5
+
+	TSC
+	PHD
+	TCD
+	LDA	:ScriptNum	;Get script number
+	DEC	;-1 for 0-99
+	ASL	;Long word pointer
+	ASL
+	TAY
+	LDX	ScriptPtrs,Y	;Get pointer to file list
+	BRA	:Loop	;Jump into loop
+
+]A	PHX
+	STA	:ScriptNum	;Save file # in temp
+	PHA	;Is this file in memory?
+	JSR	LockMemory	;Is the memory present and locked?
+	CMP	#-1
+	BNE	:Fine	;It's here!
+	PEI	:ScriptNum	;End of list?
+	JSR	LoadNewFile	;Load in a new file
+:Fine	PLX	;Restore index
+	INX	;Next entry
+	INX
+:Loop	LDA:	$0000,X	;End of list?
+	BNE	]A	;Load it in
+	PLD	;Restore direct page
+	PLA	;Fix return address
+	STA	2-1,S
+	RTS	;Exit
+
+*
+* Check if the file is in memory already?
+*
+
+LockMemory
+:Handle		=	1	;Temp handle
+:RTSVal		=	5	;Return address
+:FileNum	=	7	;File number
+:EndDirect	=	9
+
+	TSC
+	SEC
+	SBC	#4	;Allocate local storage
+	TCS
+	PHD
+	TCD
+
+	PEI	:FileNum	;Save file number
+	JSR	FindFileInCache	;Is the file in the cache?
+	CMP	#-1
+	BEQ	:NotHere	;Nope!
+	STA	:FileNum	;Save handle number
+	ASL
+	ASL
+	TAX
+	LDA	CacheHandle,X	;Get handle
+	STA	:Handle
+	LDA	CacheHandle+2,X
+	STA	:Handle+2
+
+	LDY	#4
+	LDA	[:Handle],Y	;First lock down the handle
+	ORA	#$8000
+	STA	[:Handle],Y
+
+	LDX	#0	;Assume ok
+	LDY	#2
+	LDA	[:Handle]	;Valid handle?
+	ORA	[:Handle],Y
+	BNE	:Exit
+	PEI	:FileNum	;Kill this cache handle
+	JSR	KillCacheEntry	;Bye bye
+:NotHere	LDX	#-1	;Exit
+:Exit	PLD	;Restore direct page
+	LDA	:RTSVal,S	;Fix return address
+	STA	:EndDirect-2,S
+	CLC
+	TSC
+	ADC	#4+2
+	TCS
+	TXA
+	RTS	;Exit
+
+*
+* Find a file number in cache
+*
+
+FindFileInCache
+:RTSVal		=	1	;Return address
+:FileNum	=	3	;Script number
+:EndDirect	=	5
+
+	TSC
+	PHD
+	TCD
+	LDY	#MemHandles-1*2
+	LDA	:FileNum
+]A	CMP	CacheFileNum,Y	;Match?
+	BEQ	:GotIt	;File list is not loaded
+	DEY
+	DEY
+	BPL	]A
+	LDX	#-1	;Assume bogus dude!
+	BRA	:Exit
+:GotIt	TYA
+	LSR
+	TAX
+:Exit	PLD	;Restore direct page
+	PLA	;Fix return address
+	STA	2-1,S
+	TXA	;Return the error code
+	RTS	;Exit
+
+*
+* Kill a cache entry completely
+*
+
+KillCacheEntry
+:RTSVal	= 1		;Return address
+:HandleNum = 3	;Script number
+:EndDirect	= 5
+
+	LDA	:HandleNum,S	;Get the handle number
+	ASL
+	TAX	;Word index
+	STZ	CacheFileNum,X	;Kill entry number
+	ASL
+	TAX
+	LDA	CacheHandle+2,X	;Get handle
+	PHA
+	LDA	CacheHandle,X
+	PHA
+	LDX	#DisposeHandle	;Remove handle
+	JSL	Tool_Entry
+	PLA	;Fix return address
+	STA	2-1,S
+	RTS	;Exit
+
+*
+* Load in a new file into the cache
+*
+
+LoadNewFile
+:RTSVal		=	1
+:FileNum	=	3
+:EndDirect	=	5
+
+	TSC
+	PHD	;Create my stack frame
+	TCD
+
+*
+* Which disk is the file on?
+*
+
+	BIT	HardDisk	;Is this on a hard drive?
+	BMI	:HD1	;Don't log disks then!
+	LDA	:FileNum	;Get the file number
+	SEP	#$30	;8 bit
+	LDY	#'1'-1	;Start at side #1
+]A	INY
+	CMP	DiskSides-$31,Y	;On this side?
+	BGE	]A
+	REP	#$20
+	LDX	#7-1*2
+]A	CMP	WeirdSides,X
+	BEQ	:PlusOne
+	DEX
+	DEX
+	BPL	]A
+	BRA	:UseX
+
+:PlusOne	INY
+:UseX	STY	VideoName+7	;Get disk side
+	STY	AudioName+7
+	STY	DeathName+7
+	STY	DeathAudioName+7
+
+*
+* Master loop
+*
+
+:HD1	SEP	#$30
+	LDA	:FileNum	;File number to load
+	LDY	#-1
+	SEC
+]A	INY	;Inc tens
+	SBC	#10	;Sub a ten
+	BCS	]A	;More?
+	ADC	#10	;Undo subtraction
+	ORA	#'0'	;Fix ones
+	XBA	;Swap
+	TYA	;Get tens
+	ORA	#'0'	;Fix tens
+	REP	#$30	;Back to 16 bit
+	STA	VideoName+14	;Save file number
+	STA	AudioName+14
+	STA	DeathName+14
+	STA	DeathAudioName+14
+
+	LDA	:FileNum+1	;Get file type (PreShifted by 4)
+	AND	#$FF	;Force byte
+	TAY
+	LDA	FNamePointers+2,Y
+	PHA
+	LDA	FNamePointers,Y	;Get true filename
+	PHA
+	JSR	LoadAFile	;Pass the filename to the file
+	PHY	;Save the pointer
+	PHX
+	PEA	#0	;Blank entry
+	JSR	FindFileInCache	;Find the entry
+	ASL
+	TAX
+	LDA	:FileNum	;File number
+	STA	CacheFileNum,X	;Save it
+	TXA
+	ASL
+	TAX
+	PLA	;Save start address
+	STA	CacheHandle,X
+	PLA	;Save start address
+	STA	CacheHandle+2,X
+:Exit	PLD	;Restore master index
+	PLA
+	STA	2-1,S
+	RTS	;Exit
+
+*
+* Load a file into memory
+* Return the handle
+*
+
+LoadAFile
+:OpenParms			=	1	;Number of parms
+:OpenID				=	3	;1
+:OpenFileName		=	5	;2
+:OpenReqAccess		=	9	;3
+:OpenResourceNum	=	11	;4
+:OpenAccess			=	13	;5
+:OpenFileType		=	15	;6
+:OpenAuxType		=	17	;7
+:OpenStorage		=	21	;8
+:OpenCreateTime		=	23	;9
+:OpenModTime		=	31	;10
+:OpenOptions		=	39	;11
+:OpenEOF			=	43	;12
+
+:CloseParms			=	47	;Close the file
+:CloseID			=	49	;1
+
+:ReadParms			=	51	;Read from the file
+:ReadID				=	53	;1
+:ReadAdr			=	55	;2
+:ReadLen			=	59	;3
+:ReadBytes			=	63	;4
+
+:Handle				=	67	;Temp handle
+:RTSVal				=	71	;Return address
+:FileName			=	73	;Filename pointer
+:EndDirect			=	77
+
+	TSC
+	SEC
+	SBC	#:RTSVal-1	;Allocate my local storage
+	TCS
+	PHD
+	TCD
+
+*
+* Create the open file record
+*
+
+	LDA	#12	;12 parms
+	STA	:OpenParms
+	LDA	:FileName	;Get the filename
+	STA	:OpenFileName
+	LDA	:FileName+2
+	STA	:OpenFileName+2
+	LDA	#1	;I want read only access
+	STA	:OpenReqAccess
+	STZ	:OpenResourceNum	;Only the data fork
+
+	PEA	#0	;Bank #0
+	TDC
+	INC
+	PHA
+	PEA	#$2010	;Open the file
+	STZ	:OpenOptions
+	STZ	:OpenOptions+2
+	JSL	GSOSSTACK
+	BCC	:OpenOk
+
+*
+* Ask for a specific disk
+*
+
+	JSR	FadeOut	;Oh oh
+	JSR	WaitForFade
+	LDA	#1
+	BIT	HardDisk
+	BMI	:HD3
+	LDA	VideoName+7	;Get the disk #
+	AND	#$FF
+	SEC
+	SBC	#'0'	;Convert to hex
+:HD3	STA	SideNeeded
+	PEA	#4	;Show side needed
+	JSR	RunAllScenes
+	JSR	FadeIn	;Fade it in
+	JSR	WaitForFade
+
+*
+* Wait until the file is online
+*
+
+:LongDelay	LDA	#2*60
+	STA	DiskTime
+]A	JSR	GetJoyStick	;Process the joystick
+	LDA	QuitFlag	;Did I quit?
+	BEQ	:cc
+	BRL	QuitNow
+:cc	LDA	DiskTime
+	BNE	]A
+
+	PEA	#0	;Bank #0
+	TDC
+	INC
+	PHA
+	PEA	#$2010	;Open the file
+	STZ	:OpenOptions
+	STZ	:OpenOptions+2
+	JSL	GSOSSTACK
+	BCS	:LongDelay
+
+*
+* Wait for screen
+*
+
+	JSR	FadeOut	;Fade out the screen
+	JSR	WaitForFade
+	LDA	WinFlag	;Is it over?
+	BNE	:OpenOk
+	LDA	Lives	;Game over?
+	BEQ	:OpenOk
+	JSR	ShowScoreScreen	;Show the current score as I load
+
+*
+* The file is open
+*
+
+:OpenOk	LDA	:OpenID	;Get the ID
+	STA	:ReadID
+	STA	:CloseID
+
+	PHA	;Space for handle
+	PHA
+	PEI	:OpenEOF+2
+	PEI	:OpenEOF
+	LDA	NewID
+	PHA
+	PEA	#$8200	;Allow it to be purged!
+	PHA
+	PHA
+	LDX	#NewHandle
+	JSL	Tool_Entry
+	PLX
+	PLY
+	BCS	:Fatal
+	STX	:Handle	;Dereferance it
+	STY	:Handle+2
+	LDA	[:Handle]
+	STA	:ReadAdr
+	LDY	#2
+	LDA	[:Handle],Y
+	STA	:ReadAdr+2
+
+	LDA	#4
+	STA	:ReadParms
+	LDA	:OpenEOF
+	STA	:ReadLen	;Read in $60000 long
+	LDA	:OpenEOF+2
+	STA	:ReadLen+2
+	PEA	#0
+	TDC
+	CLC
+	ADC	#:ReadParms
+	PHA
+	PEA	#$2012	;Read in the file
+	JSL	GSOSSTACK
+	BCC	:ReadOk
+:Fatal	BRL	QuitNow	;Quit!
+
+:ReadOk	LDA	#1
+	STA	:CloseParms
+	PEA	#0
+	TDC
+	CLC
+	ADC	#:CloseParms
+	PHA
+	PEA	#$2014
+	JSL	GSOSSTACK	;CLOSE
+	LDX	:Handle	;Return the handle
+	LDY	:Handle+2
+	PLD
+	LDA	:RTSVal,S
+	STA	:EndDirect-2,S
+	CLC
+	TSC
+	ADC	#:RTSVal-1+4
+	TCS
+	RTS	;Exit
+
+*
+* Print a number in decimal
+* X = Precision
+*
+
+PrDec
+:RTSVal		=	1
+:Value		=	3	;Value to convert
+:Length		=	5	;Precision
+:Screenad	=	7	;Screen address to draw at
+:EndDirect	=	9
+
+	TSC
+	PHD
+	TCD
+]B	LDY	#-2
+	LDA	:Value
+	LDX	:Length
+	SEC
+]A	INY
+	INY
+	SBC	Tens,X	;Sub from 10's table
+	BCS	]A
+	ADC	Tens,X	;Fix it
+	STA	:Value
+	PEI	:Screenad
+	LDA	DigitPtr,Y	;Which number?
+	PHA
+	JSR	DrawAShape	;Draw it
+	STA	:Screenad	;Save new screen address
+	DEC	:Length	;Count down
+	DEC	:Length
+	BPL	]B	;Try again
+	PLD
+	PLA
+	STA	6-1,S
+	CLC
+	TSC
+	ADC	#6-2
+	TCS
+	RTS	;Exit
+
+*
+* Draw a shape
+*
+
+DrawAShape
+:Width		=	1
+:Height		=	3
+:RTSVal		=	5
+:ShapePtr	=	7
+:Screenad	=	9
+:EndDirect	=	11
+
+	TSC
+	SEC
+	SBC	#4
+	TCS
+	PHD
+	TCD
+
+	LDY	:ShapePtr
+	LDA:	$0000,Y	;Get width of shape
+	AND	#$FF
+	STA	:Width
+	LDA:	$0001,Y	;Get height of shape
+	AND	#$FF
+	STA	:Height	;Save
+	INY
+	INY	;Index to true shape data
+	PEI	:Width	;Save width
+	PHA	;Save height
+	LDA	ForeColor	;Get the foreground color
+	PHA
+	PHY	;Save the pointer to the shape
+	LDA	VideoBank	;Video bank
+	PHA
+	PEI	:Screenad	;Pointer to screen memory
+	JSR	Draw4Bit	;Draw the first shape
+
+	PEI	:Width	;Width
+	PEI	:Height	;Height
+	LDY	BackColor	;Get the foreground color
+	PHY
+	PHA	;Pointer to the shape (Continued)
+	LDA	VideoBank
+	PHA
+	PEI	:Screenad
+	JSR	Draw4Bit	;Draw the second shape
+	LDA	:Width	;2 pixels per byte
+	ASL
+	ASL
+	CLC
+	ADC	:Screenad	;Add to the base address
+	TAX	;Move to the next char
+	PLD
+	LDA	:RTSVal,S	;Get return address
+	STA	:EndDirect-2,S
+	CLC
+	TSC
+	ADC	#4+4	;Adjust
+	TCS
+	TXA	;Return current shape pointer
+	RTS	;Exit
+
+*
+* Draw a 2 bit per pixel imag
+*
+
+Draw4Bit
+:Temp1		=	1	;Bit temp
+:Width2		=	3	;Temp widht
+:RTSVal		=	5	;Return address
+:Screenad	=	7	;Pointer to video memory
+:ShapePtr	=	11	;Pointer to shape
+:Color		=	13	;Color to draw with
+:Height		=	15	;Height of shape
+:Width		=	17	;Width of shape
+:EndDirect	=	19
+
+	
+	TSC
+	SEC
+	SBC	#4	;Allocate local storage
+	TCS
+	PHD	;Save direct page
+	TCD
+	SEP	#$20	;8 bit
+	LDA	:Color	;Make lower into upper for speed drawing
+	ASL
+	ASL
+	ASL
+	ASL
+	STA	:Color+1
+
+*
+* Main loop
+*
+
+]C	SEP	#$20	;8 bit
+	LDY	#0	;Clear screen index register
+	LDA	:Width	;Get width of shape
+	STA	:Width2
+]B	LDA	(:ShapePtr)	;Get a shape byte
+	INC	:ShapePtr
+	BNE	:CU
+	INC	:ShapePtr+1
+:CU	STA	:Temp1	;Save temp
+
+*
+* Convert the 1 bit per pixel image
+*
+
+	LDX	#4	;4 pixels per byte
+]A	ASL	:Temp1
+	BCC	:ClearUpper	;Use as is?
+	LDA	[:Screenad],Y
+	AND	#$0F	;Keep upper pixel
+	ORA	:Color+1	;Get color to draw with
+	STA	[:Screenad],Y
+
+:ClearUpper	ASL	:Temp1	;Get another bit
+	BCC	:ClearLower	;Keep lower pixel?
+	LDA	[:Screenad],Y
+	AND	#$F0
+	ORA	:Color
+	STA	[:Screenad],Y	;Save to screen
+
+:ClearLower	INY	;Next screen index
+	DEX	;All 8 bits done?
+	BNE	]A
+	DEC	:Width2	;All bytes done?
+	BNE	]B	;Loop
+	REP	#$21	;16 bit and clear carry
+	LDA	:Screenad	;Get current scan line
+* CLC
+	ADC	#160	;Next down
+	STA	:Screenad
+	DEC	:Height	;All done?
+	BNE	]C
+	LDX	:ShapePtr	;Get current shape index
+	PLD
+	LDA	:RTSVal,S	;Get return address
+	STA	:EndDirect-2,S
+	CLC
+	TSC
+	ADC	#4+12	;Adjust
+	TCS
+	TXA	;Return current shape pointer
+	RTS	;Exit
+
+*
+* Choose the brightest and the darkest colors
+* and same the color numbers in ForeColor and BackColor
+*
+
+CalcHighLow
+:Temp		=	1
+:MinInten	=	3
+:MaxInten	=	5
+:RTSVal		=	7
+
+	TSC
+	SEC
+	SBC	#6	;Allocate my local storace
+	TCS
+	PHD
+	TCD
+	LDA	#-1	;Assume maximum intensity
+	STA	:MinInten
+	STZ	:MaxInten	;Assume minimum intensity
+
+	LDY	#32-2	;All palette colors
+]A	LDA	NewPalette,Y
+	AND	#$0F
+	STA	:Temp
+	LDA	NewPalette,Y
+	LSR
+	LSR
+	LSR
+	LSR
+	AND	#$0F
+	CLC
+	ADC	:Temp
+	STA	:Temp
+	LDA	NewPalette+1,Y
+	AND	#$FF
+	CLC
+	ADC	:Temp
+	CMP	:MinInten
+	BGE	:More
+	STA	:MinInten
+	STY	ForeColor
+:More	CMP	:MaxInten
+	BLT	:Less
+	STA	:MaxInten
+	STY	BackColor
+:Less	DEY
+	DEY
+	BPL	]A
+	LSR	ForeColor
+	LSR	BackColor
+	PLD
+	TSC
+	CLC
+	ADC	#6
+	TCS
+	RTS
+
+*
+* Init all the system tools and memory requirements
+*
+
+InitTools
+:Palette	= 1		;Temp palette
+:Handle		= 33	;Temp handle
+:RTSVal		= 37	;Return address
+:EndDirect	= 39
+
+	TSC
+	SEC
+	SBC	#36	;Create my stack frame
+	TCS
+	PHD
+	TCD
+
+	PHA	;Space for ID
+	LDX	#MMStartUp	;Start up the Memory Manager
+	JSL	Tool_Entry
+	PLX
+	STX	MyID	;Save my ID
+	BCS	:Err2
+
+	LDX	#TLStartUp	;Start up the Tool Locator
+	JSL	Tool_Entry
+	BCS	:Err2
+
+	PHA	;Space for handle
+	PHA
+	LDA	MyID	;Save my application ID
+	PHA
+	PEA	#2	;Resource referance
+	PEA	#^MyToolTable	;Index to tool list
+	PEA	#MyToolTable
+	LDX	#StartUpTools	;Start up all my tools
+	JSL	Tool_Entry
+	PLX	;Get referance pointer
+	PLY
+	BCC	:ToolOk
+:Err2	BRL	:Error
+
+:ToolOk	STX	ToolRef	;Save referance record
+	STY	ToolRef+2
+
+	PHA
+	PEA	#$1000	;Application ID
+	LDX	#GetNewID	;Get data memory ID
+	JSL	Tool_Entry
+	PLX
+	BCS	:Error
+	STX	NewID	;Save it
+
+	PEA	#^MyIRQ	;Install my heartbeat irq
+	PEA	#MyIRQ
+	LDX	#SetHeartBeat
+	JSL	Tool_Entry
+
+	SEP	#$20
+	LDAL	$E1C034	;Set the border color to black
+	STA	OldBorderColor
+	AND	#$F0
+	STAL	$E1C034
+	LDA	#-1
+	STA	OldBorderColor+1
+
+	REP	#$20
+	PEA	#0	;Force screen to 320 mode
+	LDX	#SetAllSCBs
+	JSL	Tool_Entry
+
+	LDX	#32-2
+]A	STZ	:Palette,X	;Init a blank palette
+	DEX
+	DEX
+	BPL	]A
+
+	LDA	#0
+	PHA	;Palette #0
+	PHA	;Bank #0
+	TDC
+	INC
+	PHA
+	LDX	#SetColorTable	;Set color palette
+	JSL	Tool_Entry
+	LDX	#HideCursor
+	JSL	Tool_Entry
+
+	PHA	;Get the current port
+	PHA
+	LDX	#GetPort
+	JSL	Tool_Entry
+	PLA
+	STA	:Handle
+	PLA
+	STA	:Handle+2
+	LDY	#4
+	LDA	[:Handle],Y
+	STA	VideoBank
+	LDA	#0
+
+:Error	TAX	;Save error code
+	PLD	;Restore direct page
+	CLC
+	TSC
+	ADC	#36	;Remove local
+	TCS
+	TXA
+	CMP	#1
+	RTS
+
+*
+* Quit the program RIGHT NOW!
+*
+
+KillTools	PEA	#^MyIRQ
+	PEA	#MyIRQ
+	LDX	#DelHeartBeat
+	JSL	Tool_Entry
+
+:NoDisp	LDA	OldBorderColor
+	BPL	:NotBack
+	SEP	#$20
+	STAL	$E1C034	;clock	control	register
+	REP	#$20
+:NotBack
+
+	LDX	ToolRef	;Any tools loaded?
+	LDY	ToolRef+2
+	BNE	:Tools
+	TXA
+	BEQ	:NoTools
+:Tools	PEA	#1	;Referance is by handle
+	PHY	;Pointer to Tool list
+	PHX
+	LDX	#ShutDownTools	;Turn off all tools
+	JSL	Tool_Entry
+
+:NoTools	LDA	NewID	;Get my memory ID
+	BEQ	:BadID
+	PHA	;Remove
+	PHA	;Kill memory
+	LDX	#DisposeAll	;Kill all allocated memory
+	JSL	Tool_Entry
+	LDX	#DeleteID	;Remove this ID
+	JSL	Tool_Entry
+
+:BadID	LDX	#TLShutDown	;Kill Tool Locator
+	JSL	Tool_Entry
+	LDA	MyID
+	PHA
+	LDX	#MMShutDown	;Kill Memory manager
+	JSL	Tool_Entry
+	RTS
+
+*
+* Check if the disk is online
+*
+
+CheckHardDrive
+	PEA	#^:FileInfo
+	PEA	#:FileInfo
+	PEA	#$2006	;Get File Info
+	JSL	GSOSSTACK
+	BCC	:Floppy
+
+*
+* Adjust pointer table to get rid of prefixs
+*
+
+	LDX	#4-1*4
+]A	CLC
+	LDA	FNamePointers,X
+	ADC	#5
+	STA	FNamePointers,X
+	TAY
+	LDA	#9
+	STA:	$0000,Y
+	LDA	#'9:'
+	STA:	$0002,Y
+	DEX
+	DEX
+	DEX
+	DEX
+	BPL	]A
+	LDA	#14	;Corrent the final length
+	STA	DeathAudioName+5
+	LDA	#-1	;This is a hard disk game
+	STA	HardDisk
+:Floppy	RTS
+
+:FileInfo	DA	2	;Parm count
+	ADRL	VideoName	;Pathname
+	DS	2	;Access
+
+*
+* Read the joystick/keyboard
+*
+
+GetJoyStick
+:EventRec = 1
+:RTSVal	= 17
+:EndDirect = 19
+
+	TSC
+	SEC
+	SBC	#16	;Stack frame
+	TCS
+	PHD
+	TCD
+	LDA	KeyTime	;Time to read the keyboard?
+	BEQ	:Read
+	BRL	:NotYet	;Exit now
+
+:Read	DEC	KeyTime	;Set flag
+
+	PHA
+	PEA	#$FFFF	;Allow desk accs
+	PEA	#0
+	TDC
+	INC	;My event record
+	PHA
+	LDX	#GetNextEvent
+	JSL	Tool_Entry
+	PLA	;Get event #
+	BCS	:NoKey2	;Error?
+	BEQ	:NoKey2	;No event?
+	LDA	:EventRec	;Event type
+	CMP	#3	;Keyboard
+	BEQ	:KeyOk
+	CMP	#5	;Auto key?
+	BNE	:NoKey2
+:KeyOk	LDA	:EventRec+2	;Get key
+	CMP	#'a'
+	BLT	:Use
+	CMP	#'z'+1
+	BGE	:Use
+	AND	#$DF	;Convert to upper case
+
+:Use	CMP	#'Q'	;Quit?
+	BNE	:NotQuit
+	LDA	#-1	;Set the quit flag
+	STA	QuitFlag
+	BRA	:NoKey2
+
+:NotQuit	CMP	#'P'	;Pause
+	BNE	:NotPause
+	LDA	PauseFlag
+	EOR	#-1
+	STA	PauseFlag
+:NoKey2	BRL	:NoKey
+
+:NotPause	CMP	#'S'	;Sound
+	BEQ	:Sound
+	CMP	#$13	;Ctrl-S
+	BEQ	:Sound
+	CMP	#'A'	;Audio
+	BNE	:NotSound
+:Sound	LDA	SoundFlag	;Toggle sound bit
+	EOR	#1
+	STA	SoundFlag
+	BRA	:NoKey
+
+:NotSound	CMP	#'W'
+	BNE	:NotWimp
+	LDA	WimpMode
+	EOR	#-1
+	STA	WimpMode
+	BRA	:NoKey
+
+:NotWimp	LDX	#$10	;Assume fire
+	CMP	#$0D	;Enter
+	BEQ	:JoyKey
+	CMP	#'0'
+	BEQ	:JoyKey
+	LDX	#$08
+	CMP	#'2'	;2 or 5
+	BEQ	:JoyKey
+	CMP	#'5'
+	BEQ	:JoyKey
+	CMP	#$0A
+	BEQ	:JoyKey
+
+	LDX	#$02
+	CMP	#'4'
+	BEQ	:JoyKey
+	CMP	#$08
+	BEQ	:JoyKey
+
+	LDX	#$01
+	CMP	#'6'
+	BEQ	:JoyKey
+	CMP	#$15
+	BEQ	:JoyKey
+
+	LDX	#$04
+	CMP	#'8'
+	BEQ	:JoyKey
+	CMP	#$0B
+	BNE	:NoKey
+:JoyKey	TXA
+	LDX	JoyStickVal
+	BEQ	:TooSoon
+	LDA	#$FFFF
+:TooSoon	TSB	JoyStickVal
+:NoKey
+:NotYet	LDX	JoyStickVal
+	PLD
+	CLC
+	TSC
+	ADC	#16
+	TCS
+	TXA
+	RTS
+
+*
+* My global variables
+*
+
+Tens	DA	1,10,100,1000,10000	;Tens for PrDec
+
+VideoBank	DA	$E1	;Bank of video memory
+WimpMode	DS	2	;I am wimping out!
+MyID	DS	2	;My memory ID
+NewID	DS	2	;My data ID
+MyDirect	DS	2	;My direct page address
+MyStack	DS	2	;My stack pointer
+ToolRef	DS	4	;My tool handle
+ForeColor	DS	2	;Foreground color
+BackColor	DS	2	;Background color
+SoundFlag	DS	2	;Set if sound is disabled
+PauseFlag	DS	2	;Set if game is paused
+QuitFlag	DS	2	;Set if game is quit
+FadeFactor	DS	2	;Current fade index
+FadeFlag	DS	2	;Fade direction (If any)
+FadeTable	DS	16	;Fade multiply table
+KeyTime	DS	2	;Zero if time to read the keyboard
+ColorFlag	DS	2	;Set if a new palette is created
+OldBorderColor	DS	2	;Previous border color
+NewPalette	DS	32	;New game palette
+JoyStickVal	DS	2	;Joy stick value
+StartTimer	DS	2	;Set to start the videocount
+VideoCount	DS	2	;Number of video frames of time delat
+CountDown	DS	2	;Count down IRQ timer
+SoundTimeDelta	DS	2	;Current running sound time
+SoundTime	DS	2	;Sound time speed
+MySoundHalt	DA	1	;Sound halt flag
+Score	DS	2	;Current score
+DiskTime	DS	2	;Time between disk events
+HardDisk	DS	2	;Set if on a hard disk
+UnpackPtr	DS	4	;Pointer to video data
+PackSoundPtr	DS	4	;Pointer to current sound data
+SoundSize	DS	2	;Remaining sound data
+DocRamPtr	DS	2	;Pointer to DOC RAM
+RawPackSoundPtr	DS	4	;True pointer to sound data
+RawSoundSize	DS	2	;Size of sound data
+FrameCounter	DS	2	;Current frame #
+BlankPalFlag	DS	2	;Screen blanked?
+SoundPitch	DS	2	;Sound pitch
+PlayedDeath	DS	2	;Am I playing a death scene?
+SoundPresent	DS	2	;Is a sound loaded?
+CurrentScene	DS	2	;Which scene is active?
+Lives	DS	2	;Number of lives left
+WinFlag	DS	2	;Set if you have won!
+ScoreDisable	DS	2	;Set if score screen is shut down
+SideNeeded	DS	2	;Disk side needed (For floppies)
+
+*
+* GSOS parmeters
+*
+
+FNamePointers	ADRL	VideoName
+	ADRL	AudioName
+	ADRL	DeathName
+	ADRL	DeathAudioName
+
+VideoName	STRL	':DISK1:VIDEO01'
+AudioName	STRL	':DISK1:AUDIO01'
+DeathName	STRL	':DISK1:DEATH01'
+DeathAudioName	STRL	':DISK1:DEATH01AUDIO'
+
+*
+* File index cache
+*
+
+CacheFileNum	DS	2*MemHandles
+CacheHandle	DS	4*MemHandles
+
+DiskSides	DB	10,14,19,25,29,35,39,44,99
+
+WeirdSides	DA	9,$0412,$0C12,34,$822,$C22,$426
+
+Files01	DA	01,$0401,0
+Files02	DA	02,0
+Files03	DA	03,0
+Files04	DA	04,0
+Files05	DA	05,0
+
+AList01	DA	01,NullMoves
+	DA	0
+AList02	DA	02,NullMoves
+	DA	0
+AList03	DA	03,NullMoves
+	DA	0
+AList04	DA	04,NullMoves
+	DA	0
+AList05	DA	05,NullMoves
+	DA	0
+
+Files06	DA	06,$0406,07,$0407,$0807,$0C07,0
+AList06	DA	06,NullMoves
+	DA	07,L16CD
+	DA	0
+L16CD	HEX	18010807220208072B080807
+NullMoves	HEX	00
+
+Files07	DA	08,$0408,$0807,$0C07,0
+AList07	DA	08,L16EA
+	DA	0
+L16EA	HEX	0F0808071E04080700
+
+Files08	DA	$0409,$0809,$0C09,09,0
+AList08	DA	09,L1703
+	DA	0
+L1703	HEX	0D0108091B020809350208094F02080900
+
+Files09	DA	10,$040A,$080A,$0C0A,11,$040B,0
+AList09	DA	10,L172C
+	DA	11,NullMoves
+	DA	0
+L172C	HEX	1104080A00
+
+Files10	DA	12,$040C,$080C,$0C0C,0
+AList10	DA	12,L1741
+	DA	0
+L1741	HEX	0D10080C00
+
+Files11	DA	$080D,$0C0D,13,$040D,0
+AList11	DA	13,L1756
+	DA	0
+L1756	HEX	0E01080D1404080D00
+
+Files12	DA	$080D,$0C0D,14,$040E,0
+AList12	DA	14,L176F
+	DA	0
+L176F	HEX	1201080D1601080D00
+
+Files13	DA	15,$040F,$080F,$0C0F,16,$0410,0
+AList13	DA	15,L1790
+	DA	16,L1799
+	DA	0
+L1790	HEX	0A08080F1001080F00
+L1799	HEX	0908080F0E02080F00
+
+Files14	DA	17,$0411,$080F,$0C0F,0
+AList14	DA	17,L17B2
+	DA	0
+L17B2	HEX	1110080F00
+
+Files15	DA	18,$0812,$0412,$0C12,0
+AList15	DA	18,L17C7
+	DA	0
+L17C7	HEX	2004081200
+
+Files16	DA	19,$0413,$0813,$0C13,20,$0414,21,$0415,0
+AList16	DA	19,L17EC
+	DA	20,L17F1
+	DA	21,L17F6
+	DA	0
+L17EC	HEX	1304081300
+L17F1	HEX	0D01081300
+L17F6	HEX	1104081300
+
+Files17	DA	22,$0416,$0816,$0C16,23,$0417,0
+AList17	DA	22,L1813
+	DA	23,L1818
+	DA	0
+L1813	HEX	0F01081600
+L1818	HEX	1002081600
+
+Files18	DA	24,$0418,$0816,$0C16,25,$0419,26,$041A,0
+AList18	DA	24,L183D
+	DA	25,L1842
+	DA	26,L1847
+	DA	0
+L183D	HEX	0D02081600
+L1842	HEX	1401081600
+L1847	HEX	0B04081600
+
+Files19	DA	$081B,$0C1B,$081C,$0C1C,27,$041B,0
+AList19	DA	27,L1860
+	DA	0
+L1860	HEX	FF04081BFF08081B0C10081C1701081C00
+
+Files20	DA	$081B,$0C1B,$081C,$0C1C,28,$041C,0
+AList20	DA	28,L1885
+	DA	0
+L1885	HEX	FF04081BFF08081B0810081C00
+
+Files21	DA	$081B,$0C1B,$081C,$0C1C,29,$041D,0
+AList21	DA	29,L18A6
+	DA	0
+L18A6	HEX	FF04081BFF08081B0C10081C00
+
+Files22	DA	$081B,$0C1B,$081C,$0C1C,30,$041E,0
+AList22	DA	30,L18C7
+	DA	0
+L18C7	HEX	FF01081B0B10081C00
+
+Files23	DA	$081B,$0C1B,$081C,$0C1C,31,$041F,0
+AList23	DA	31,L18E4
+	DA	0
+L18E4	HEX	0904081C1308081C00
+
+Files24	DA	$081B,$0C1B,$081C,$0C1C,32,$0420,0
+AList24	DA	32,L1901
+	DA	0
+L1901	HEX	0510081C0E08081C00
+
+Files25	DA	$081B,$0C1B,$081C,$0C1C,33,$0421,0
+AList25	DA	33,L191E
+	DA	0
+L191E	HEX	0901081C0E08081B00
+
+Files26	DA	$0422,$0C22,34,$0822,35,$0423,0
+AList26	DA	34,NullMoves
+	DA	35,L193F
+	DA	0
+L193F	HEX	0502082200
+
+Files27	DA	$0824,$0C24,36,$0424,37,$0425,0
+AList27	DA	36,NullMoves
+	DA	37,L195C
+	DA	0
+L195C	HEX	0B01082400
+
+Files28	DA	$0824,$0C24,38,$0426,0
+AList28	DA	38,L1971
+	DA	0
+L1971	HEX	0D10082200
+
+Files29	DA	$0827,$0C27,39,$0427,40,$0428,41,$0429,0
+AList29	DA	39,NullMoves
+	DA	40,L199A
+	DA	39,NullMoves
+	DA	41,L199F
+	DA	0
+L199A	HEX	0801082700
+L199F	HEX	1102082700
+
+Files30	DA	$0827,$0C27,39,$0427,42,$042A,43,$042B,0
+AList30	DA	39,NullMoves
+	DA	42,L19C8
+	DA	39,NullMoves
+	DA	43,L19CD
+	DA	0
+L19C8	HEX	0C01082700
+L19CD	HEX	0B0208271201082700
+
+Files31	DA	44,$042C,45,$042D,46,$042E,47,$042F,0
+AList31	DA	44,NullMoves
+	DA	45,NullMoves
+	DA	46,NullMoves
+	DA	47,NullMoves
+	DA	0
+
+Files32	DA	48,$0430,49,$0431,0
+AList32	DA	48,NullMoves
+	DA	49,NullMoves
+	DA	0000
+
+ScriptPtrs	DA	Files01,AList01	;1
+	DA	Files02,AList02	;2
+	DA	Files03,AList03	;3
+	DA	Files04,AList04	;4
+	DA	Files05,AList05	;5
+	DA	Files06,AList06	;6
+	DA	Files07,AList07	;7
+	DA	Files08,AList08	;8
+	DA	Files09,AList09	;9
+	DA	Files10,AList10	;10
+	DA	Files11,AList11	;11
+	DA	Files12,AList12	;12
+	DA	Files13,AList13	;13
+	DA	Files14,AList14	;14
+	DA	Files15,AList15	;15
+	DA	Files16,AList16	;16
+	DA	Files17,AList17	;17
+	DA	Files18,AList18	;18
+	DA	Files19,AList19	;19
+	DA	Files20,AList20	;20
+	DA	Files21,AList21	;21
+	DA	Files22,AList22	;22
+	DA	Files23,AList23	;23
+	DA	Files24,AList24	;24
+	DA	Files25,AList25	;25
+	DA	Files26,AList26	;26
+	DA	Files27,AList27	;27
+	DA	Files28,AList28	;28
+	DA	Files29,AList29	;29
+	DA	Files30,AList30	;30
+	DA	Files31,AList31	;31
+	DA	Files32,AList32	;32
+	DA	0	;No more scripts
+
+	PUT	shapes.a65

@@ -1,0 +1,16 @@
+*
+* Link
+*
+
+	DSK	../bin/SpaceAce#b3db03
+	TYP	$B3		;Application
+	XPL
+
+
+	ASM	spaceace.a65
+	DS	0
+	KND	#$1000	;No spec mem
+	ALI	None
+	LNA	SpaceAce
+	SNA SpaceAce
+
