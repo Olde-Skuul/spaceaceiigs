@@ -17,6 +17,7 @@
 # Ignore project files in the root
 **/bin
 **/temp
+**/ipch
 
 # Allow this folder to be saved
 !/tools/bin

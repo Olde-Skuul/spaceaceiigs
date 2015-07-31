@@ -391,7 +391,7 @@ static Word ExtractVideo(OutputMemoryStream *pOutput,const Word8 *pInput,WordPtr
 
 static char Name[] = "filexxx.gif";
 
-static Word EncapsulateToGIF(OutputMemoryStream *pOutput,Filename *pOutputFilename,const Word8 *pInput,WordPtr uInputLength)
+static Word EncapsulateToGIF(OutputMemoryStream *pOutput,const Word8 *pInput,WordPtr uInputLength)
 {
 	// Too small?
 	if (uInputLength<2) {
@@ -409,12 +409,11 @@ static Word EncapsulateToGIF(OutputMemoryStream *pOutput,Filename *pOutputFilena
 	//
 	// Decompress a chunk
 	//
-
 	Word uFrame = 0;
 	for (;;) {
 		Word uChunkSize = LittleEndian::LoadAny(reinterpret_cast<const Word16 *>(pInput));
 		if (uChunkSize>=0xFF00) {
-			printf("End of data, frames = %u\n",uFrame);
+//			printf("End of data, frames = %u\n",uFrame);
 			break;
 		}
 		++uFrame;
@@ -426,7 +425,7 @@ static Word EncapsulateToGIF(OutputMemoryStream *pOutput,Filename *pOutputFilena
 			printf("Chunk size too small\n");
 			return 10;
 		}
-		printf("Chunk is %u bytes\n",uChunkSize);
+//		printf("Chunk is %u bytes\n",uChunkSize);
 		const Word8 *pWork = pInput+2;
 		uInputLength -= uChunkSize;
 		pInput+= uChunkSize;
@@ -438,7 +437,7 @@ static Word EncapsulateToGIF(OutputMemoryStream *pOutput,Filename *pOutputFilena
 			Word uType = pWork[0];
 			++pWork;
 			--uChunkSize;
-			printf("Token = 0x%02X\n",uType);
+//			printf("Token = 0x%02X\n",uType);
 
 			if (uType&0x80) {
 
@@ -487,7 +486,6 @@ static Word EncapsulateToGIF(OutputMemoryStream *pOutput,Filename *pOutputFilena
 				}
 			} else {
 
-
 				Word uTemp;
 				Word8 *pDest = MyImage.GetImage();
 				Word8 *pEnd = pDest+(320*200);
@@ -527,19 +525,12 @@ static Word EncapsulateToGIF(OutputMemoryStream *pOutput,Filename *pOutputFilena
 				} while (pDest<pEnd);
 			}
 		}
-		GIF.Save(pOutput,&MyImage);
-		Filename TempName(pOutputFilename[0]);
-		TempName.SetFileExtension(NULL);
-		NumberString Namex(static_cast<Word32>(uFrame),LEADINGZEROS|3);
-		String Name2(TempName.GetPtr());
-		Name2.Remove(Name2.GetLength()-1);
-		Name2.Append(Namex,3);
-		TempName.Set(Name2.GetPtr());
-		TempName.SetFileExtension("gif");
-		printf("Frame %s\n",TempName.GetPtr());
-		pOutput->SaveFile(&TempName);
-		pOutput->Clear();
+		if (uFrame==1) {
+			GIF.AnimationSaveStart(pOutput,&MyImage);
+		}
+		GIF.AnimationSaveFrame(pOutput,&MyImage,(100U/8U));
 	}
+	GIF.AnimationSaveFinish(pOutput);
 	return 0;
 }
 
@@ -558,28 +549,6 @@ int BURGER_ANSIAPI main(int argc,const char **argv)
 		&DoVideo,
 		&ConvertToGIF
 	};
-#if 0
-	Filename DeathName;
-	DeathName.SetFromNative("D:\\projects\\burger\\games\\spaceace\\iigs\\assets\\death\\death07.gif");
-	FileGIF Giffy;
-	InputMemoryStream InputMem;
-	if (!InputMem.Open(&DeathName)) {
-		Image MyImage;
-		if (!Giffy.Load(&MyImage,&InputMem)) {
-			OutputMemoryStream OutputMem;
-			int i = 1;
-			do {
-				OutputMem.Clear();
-				Giffy.Save(&OutputMem,&MyImage);
-				char name[256];
-				sprintf(name,"D:\\projects\\burger\\games\\spaceace\\iigs\\assets\\death\\death07x%d.gif",i);
-				DeathName.SetFromNative(name);
-				OutputMem.SaveFile(&DeathName);
-				++i;
-			} while (!Giffy.LoadNextFrame(&MyImage,&InputMem));
-		}
-	}
-#endif
 	argc = MyApp.GetArgc();
 	argv = MyApp.GetArgv();
 	argc = CommandParameter::Process(argc,argv,MyParms,sizeof(MyParms)/sizeof(MyParms[0]),
@@ -617,17 +586,17 @@ int BURGER_ANSIAPI main(int argc,const char **argv)
 				
 			// Convert raw video to GIF
 			} else if (ConvertToGIF.GetValue()) {
-				Filename OutputName;
-				OutputName.SetFromNative(argv[2]);
 				OutputMemoryStream Output;
-				if (EncapsulateToGIF(&Output,&OutputName,pInput,uInputLength)) {
+				if (EncapsulateToGIF(&Output,pInput,uInputLength)) {
 					printf("Can't convert %s!\n",argv[1]);
 					Globals::SetErrorCode(10);
 				} else {
-//					if (Output.SaveFile(&OutputName)) {
-//						printf("Can't save %s!\n",argv[2]);
-//						Globals::SetErrorCode(10);
-//					}
+					Filename OutputName;
+					OutputName.SetFromNative(argv[2]);
+					if (Output.SaveFile(&OutputName)) {
+						printf("Can't save %s!\n",argv[2]);
+						Globals::SetErrorCode(10);
+					}
 				}
 			} else {
 				printf("No conversion selected for %s!\n",argv[1]);
